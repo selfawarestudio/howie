@@ -1,6 +1,6 @@
 # Howie — a Mets game-day agent
 
-A tiny [Eve](https://www.npmjs.com/package/eve) agent that texts you once a day, like a friend who watches every game: at 10am ET it recaps last night and previews tonight in a single SMS. Silent when there's nothing — no game last night and none today means no text.
+A tiny [Eve](https://www.npmjs.com/package/eve) agent that recaps last night and previews tonight every morning at 10am ET — via **Slack** and/or **SMS**. Silent when there's nothing to say.
 
 ## Architecture
 
@@ -10,20 +10,22 @@ agent/
 ├── agent.ts               # model config (Vercel AI Gateway)
 ├── channels/
 │   ├── eve.ts             # HTTP channel for dev QA (curl / TUI)
+│   ├── slack.ts           # Slack channel (Vercel Connect)
 │   └── twilio.ts          # SMS delivery via Twilio channel
 ├── tools/
 │   └── get_mets_game.ts   # free MLB Stats API (Mets = team 121)
 └── schedules/
-    └── daily.ts           # 10:00 AM ET → proactive SMS via Twilio
+    └── daily.ts           # 10:00 AM ET → Slack + optional SMS
 ```
 
-The morning cron hands work to the **Twilio channel** (`receive(twilio, …)`). The agent calls `get_mets_game`, writes a short reply, and Eve's Twilio channel sends that reply as SMS. No custom send tool.
+The morning cron hands work to **Slack** and/or **Twilio** (`receive(…)`). The agent calls `get_mets_game`, writes a short reply, and the channel delivers it automatically.
 
 ## Prerequisites
 
 - Node 24.x
-- A Twilio account with a phone number (~$1/mo + per-SMS fees)
-- A Vercel account (for deployment and AI Gateway OIDC in prod)
+- A Vercel account (deployment, AI Gateway OIDC, Slack Connect)
+- **Slack:** Self Aware Studio workspace + a channel for Howie
+- **SMS (optional):** Twilio account + A2P 10DLC campaign approval
 
 ## Setup
 
@@ -33,7 +35,42 @@ The morning cron hands work to the **Twilio channel** (`receive(twilio, …)`). 
 npm install
 ```
 
-### 2. Twilio
+### 2. Slack (works today — no carrier registration)
+
+Howie uses [Vercel Connect](https://vercel.com/docs/connect) for Slack credentials (no manual bot token in env).
+
+**a. Create a Slack channel** in your workspace (e.g. `#howie`) and invite your wife. Copy the channel ID (`C…` — right-click channel → View channel details, or from the URL).
+
+**b. Create and attach a Connect client:**
+
+```bash
+npm i -g vercel@latest
+export FF_CONNECT_ENABLED=1
+
+vercel connect create slack --triggers
+# Note the UID printed, e.g. slack/howie
+
+vercel connect detach <uid> --yes
+vercel connect attach <uid> --triggers \
+  --trigger-path /eve/v1/slack --yes
+```
+
+Follow the prompts to install the Slack app to **Self Aware Studio** workspace. Grant scopes for posting and reading mentions/DMs.
+
+**c. Env vars:**
+
+```
+SLACK_CONNECT_UID=slack/howie      # UID from connect create
+SLACK_CHANNEL_ID=C0123456789       # your #howie channel
+```
+
+**d. Invite the bot** to the channel: `/invite @Howie` (or whatever the app is named).
+
+**e. Deploy** (Connect triggers need a live URL — see Deployment below).
+
+**Manual use:** `@Howie what's the Mets game tonight?` in the channel works too.
+
+### 3. Twilio (optional — after A2P campaign verifies)
 
 1. Sign up at [twilio.com](https://www.twilio.com) and buy a phone number.
 2. Copy Account SID and Auth Token from the console.
@@ -54,7 +91,7 @@ https://<your-vercel-app>/eve/v1/twilio/messages
 
    Method: `POST`. Only `TWILIO_TO` can reach the agent (`allowFrom`).
 
-### 3. Model credential (local dev)
+### 4. Model credential (local dev)
 
 The default model is `openai/gpt-5.4-mini` via the Vercel AI Gateway.
 
