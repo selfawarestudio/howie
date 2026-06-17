@@ -1,20 +1,20 @@
 import { twilioChannel } from 'eve/channels/twilio';
 
-// Proactive morning texts and optional inbound replies from the fan.
 // Env vars (set locally in .env and in the Vercel project):
-//   TWILIO_ACCOUNT_SID   AC...
-//   TWILIO_AUTH_TOKEN    your auth token
-//   TWILIO_FROM          your Twilio number, E.164, e.g. +12125550100
-//   TWILIO_TO            your cell, E.164, e.g. +12015550123
+//   TWILIO_ACCOUNT_SID              AC...
+//   TWILIO_AUTH_TOKEN               your auth token
+//   TWILIO_TO                       your cell, E.164
+//   TWILIO_MESSAGING_SERVICE_SID    MG... (required for US SMS after A2P 10DLC)
+//   TWILIO_FROM                     +1... (optional if using a Messaging Service)
 
 export default twilioChannel({
-  // Only the fan can text in; resolver reads env at webhook time.
   allowFrom: () => {
     const to = process.env.TWILIO_TO;
     if (!to) throw new Error('Missing TWILIO_TO');
     return to;
   },
   messaging: {
+    messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
     from: process.env.TWILIO_FROM,
   },
 });
