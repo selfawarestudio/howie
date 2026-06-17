@@ -1,78 +1,200 @@
 # Howie — a Mets game-day agent
 
-A tiny Eve agent that texts you once a day, like a friend who watches every game:
-at 10am it recaps last night and previews tonight in a single SMS. Silent when
-there's nothing — no game last night and none today means no text.
+A tiny [Eve](https://www.npmjs.com/package/eve) agent that texts you once a day, like a friend who watches every game: at 10am ET it recaps last night and previews tonight in a single SMS. Silent when there's nothing — no game last night and none today means no text.
 
-## Files
+## Architecture
 
 ```
 agent/
-├── instructions.md        # the "voice" — terse, opinionated, Mets POV
-├── agent.ts               # model config
+├── instructions.md        # voice — terse, opinionated, Mets POV
+├── agent.ts               # model config (Vercel AI Gateway)
+├── channels/
+│   ├── eve.ts             # HTTP channel for dev QA (curl / TUI)
+│   └── twilio.ts          # SMS delivery via Twilio channel
 ├── tools/
-│   ├── get_mets_game.ts   # free MLB Stats API (no key), Mets = team 121
-│   └── send_text.ts       # sends an SMS via Twilio
+│   └── get_mets_game.ts   # free MLB Stats API (Mets = team 121)
 └── schedules/
-    └── daily.ts           # 10:00 AM ET -> recap + preview in one text
+    └── daily.ts           # 10:00 AM ET → proactive SMS via Twilio
 ```
+
+The morning cron hands work to the **Twilio channel** (`receive(twilio, …)`). The agent calls `get_mets_game`, writes a short reply, and Eve's Twilio channel sends that reply as SMS. No custom send tool.
+
+## Prerequisites
+
+- Node 24.x
+- A Twilio account with a phone number (~$1/mo + per-SMS fees)
+- A Vercel account (for deployment and AI Gateway OIDC in prod)
 
 ## Setup
 
-1. Scaffold a fresh Eve project, then drop these files into its `agent/` dir:
-   ```bash
-   npx eve@latest init howie
-   ```
-2. Get a Twilio number (the deploy-today path for real SMS):
-   - Sign up at twilio.com, buy a phone number (~$1/mo + a fraction of a cent
-     per text — one message a day is pennies).
-   - Grab your Account SID and Auth Token from the console.
-3. Set env vars (locally in `.env`, and in the Vercel project for prod):
-   ```
-   TWILIO_ACCOUNT_SID=AC...
-   TWILIO_AUTH_TOKEN=...
-   TWILIO_FROM=+1XXXXXXXXXX     # your Twilio number, E.164
-   TWILIO_TO=+1XXXXXXXXXX       # your cell, E.164
-   ```
-4. Run it and fire a turn manually instead of waiting for 10am:
-   ```bash
-   pnpm dev
-   curl -X POST http://127.0.0.1:3000/eve/v1/session \
-     -H 'content-type: application/json' \
-     -d '{"message":"Daily check. Recap 2026-06-16 and preview 2026-06-17."}'
-   ```
-5. Ship it — the schedule becomes a Vercel Cron Job automatically:
-   ```bash
-   vercel deploy
-   ```
+### 1. Install dependencies
 
-## Other ways to text yourself
+```bash
+npm install
+```
 
-- **Email-to-SMS gateway (free):** most US carriers forward email to SMS
-  (e.g. `5551234567@vtext.com` Verizon, `@txt.att.net` AT&T, `@tmomail.net`
-  T-Mobile). Swap `send_text.ts` to send mail via Resend/SMTP. Free, but
-  carrier-dependent and increasingly flaky — Twilio is the reliable choice.
-- **Pushover / ntfy:** not technically SMS, but lands as a phone notification
-  with a one-line HTTP POST and no per-message cost. Simplest of all if you
-  don't strictly need a green-bubble text.
+### 2. Twilio
+
+1. Sign up at [twilio.com](https://www.twilio.com) and buy a phone number.
+2. Copy Account SID and Auth Token from the console.
+3. Copy `.env.example` to `.env` and fill in:
+
+```
+TWILIO_ACCOUNT_SID=AC...
+TWILIO_AUTH_TOKEN=...
+TWILIO_FROM=+1XXXXXXXXXX     # your Twilio number (E.164)
+TWILIO_TO=+1XXXXXXXXXX       # your cell (E.164)
+```
+
+4. **Optional — inbound SMS:** In the Twilio console, set your number's **Messaging webhook** to:
+
+```
+https://<your-vercel-app>/eve/v1/twilio/messages
+```
+
+   Method: `POST`. Only `TWILIO_TO` can reach the agent (`allowFrom`).
+
+### 3. Model credential (local dev)
+
+The default model is `openai/gpt-5.4-mini` via the Vercel AI Gateway.
+
+For local `eve dev`, set one of:
+
+- `AI_GATEWAY_API_KEY` from the [Vercel AI Gateway](https://vercel.com/docs/ai-gateway), or
+- `vercel link` in this project (OIDC token pulled automatically)
+
+On Vercel production, link the project and the gateway authenticates via OIDC — no API key in env.
+
+## QA (step by step)
+
+Run these in order before deploying.
+
+### Step 1 — Install and typecheck
+
+```bash
+npm install
+npm run typecheck
+npm run build
+```
+
+`eve build` should succeed and list `daily` under schedules.
+
+### Step 2 — Smoke-test the MLB tool (no SMS)
+
+Start the dev server:
+
+```bash
+npm run dev
+```
+
+In another terminal, trigger a session on the Eve HTTP channel (no Twilio needed yet):
+
+```bash
+curl -X POST http://127.0.0.1:3000/eve/v1/session \
+  -H 'content-type: application/json' \
+  -d '{"message":"Call get_mets_game for 2025-09-15 and summarize in one line. Do not mention SMS."}'
+```
+
+Copy the `sessionId` from the JSON response, then watch the stream:
+
+```bash
+curl -N http://127.0.0.1:3000/eve/v1/session/<sessionId>/stream
+```
+
+Confirm the agent calls `get_mets_game` and returns a sensible recap.
+
+### Step 3 — Fire the daily schedule (dev dispatch route)
+
+This runs the same path production cron uses, but delivers via Twilio:
+
+```bash
+curl -X POST http://127.0.0.1:3000/eve/v1/dev/schedules/daily
+```
+
+Response example:
+
+```json
+{ "scheduleId": "daily", "sessionIds": ["..."] }
+```
+
+Watch the stream for that session id. You should see tool calls to `get_mets_game`, then a short assistant message. **Check your phone** — the Twilio channel sends the final reply as SMS.
+
+To test a specific date pair without waiting for real calendar days, temporarily edit the prompt in `agent/schedules/daily.ts` with known game dates (e.g. a 2025 postseason date), re-run Step 3, then revert.
+
+### Step 4 — Verify silence on off days
+
+Trigger the schedule on a date when the Mets have no game yesterday or today (or edit the prompt to use two off-season dates). The agent should end without an assistant message — **no SMS should arrive**.
+
+### Step 5 — Health check
+
+```bash
+curl http://127.0.0.1:3000/eve/v1/health
+```
+
+## Deployment (Vercel)
+
+### Step 1 — Link and set env vars
+
+```bash
+vercel link
+```
+
+In the Vercel project **Settings → Environment Variables**, add for Production (and Preview if you want):
+
+| Variable | Value |
+|----------|-------|
+| `TWILIO_ACCOUNT_SID` | `AC...` |
+| `TWILIO_AUTH_TOKEN` | your token |
+| `TWILIO_FROM` | `+1...` Twilio number |
+| `TWILIO_TO` | `+1...` your cell |
+
+Do **not** commit `.env`. AI Gateway auth on Vercel is via OIDC after link — no gateway key required in prod.
+
+### Step 2 — Deploy
+
+```bash
+vercel deploy --prod
+```
+
+Or push to a Git-connected Vercel project.
+
+### Step 3 — Confirm cron
+
+In Vercel **Settings → Cron Jobs**, confirm a job exists for `0 14 * * *` (daily at 14:00 UTC = 10:00 AM EDT).
+
+In November when the US falls back to EST, change `agent/schedules/daily.ts` to `0 15 * * *` and redeploy.
+
+### Step 4 — Production smoke test
+
+```bash
+curl https://<your-app>/eve/v1/health
+```
+
+Optionally drive the live deployment with the Eve TUI:
+
+```bash
+npx eve dev https://<your-app>
+```
+
+### Step 5 — Twilio webhook (optional)
+
+If you want to text Howie back, set the Twilio number's Messaging webhook to:
+
+```
+https://<your-app>/eve/v1/twilio/messages
+```
+
+### Step 6 — Watch the first cron
+
+After 10am ET, check **Observability → Cron Jobs** and **Logs** in Vercel. Confirm the run started a session and your phone received the text.
 
 ## Things worth knowing
 
-- **Daylight saving.** Cron is UTC. `0 14 * * *` is 10am EDT (summer). In
-  November when the US falls back to EST, change it to `0 15 * * *`.
-- **No skip risk anymore.** Because the recap runs at 10am the next morning,
-  last night's game is always Final by then — the old late-night timing gap
-  is gone.
-- **`defineSchedule` is inferred.** Eve launched today; the schedule handler's
-  exact signature isn't in the public docs yet. The cron + `run` shape matches
-  Eve's described behavior, but check it against the scaffold's generated
-  example (or `node_modules/eve/docs`) and adjust if needed. Everything else
-  uses confirmed APIs (`defineAgent`, `defineTool`).
-- **Beta.** Eve is in public preview under Vercel beta terms — fine for a
-  personal toy, just expect the framework to move under you.
+- **Daylight saving.** Cron is UTC. `0 14 * * *` is 10am EDT (summer). In November, switch to `0 15 * * *` for 10am EST.
+- **No skip risk.** The recap runs at 10am the next morning, so last night's game is always Final.
+- **Twilio compliance.** You are responsible for SMS consent/opt-out rules for outbound texts to your own number this is usually fine; see Eve's Twilio channel docs for production use with other recipients.
+- **Beta.** Eve is in public preview — expect framework changes.
 
 ## Easy next step
 
-A live-game schedule that texts you only on a lead change or a Lindor/Soto
-homer — the tool already returns inning + score, so it's mostly one more
-schedule file.
+A live-game schedule that texts only on a lead change or a Lindor/Soto homer — `get_mets_game` already returns inning + score, so it's mostly one more schedule file.
