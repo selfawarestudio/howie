@@ -23,7 +23,7 @@ const dailyPrompt = (yesterday: string, today: string) =>
   `If neither day has a game, stay silent and reply with nothing.`;
 
 export default defineSchedule({
-  cron: '0 14 * * *',
+  cron: '0 13 * * *',
   async run({ receive, waitUntil, appAuth }) {
     const today = easternDate(0);
     const yesterday = easternDate(-1);

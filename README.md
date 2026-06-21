@@ -1,6 +1,6 @@
 # Howie — a Mets game-day agent
 
-A tiny [Eve](https://www.npmjs.com/package/eve) agent that recaps last night and previews tonight every morning at 10am ET — via **Slack** and/or **SMS**. Silent when there's nothing to say.
+A tiny [Eve](https://www.npmjs.com/package/eve) agent that recaps last night and previews tonight every morning at 9am ET — via **Slack** and/or **SMS**. Silent when there's nothing to say.
 
 ## Architecture
 
@@ -15,7 +15,7 @@ agent/
 ├── tools/
 │   └── get_mets_game.ts   # free MLB Stats API (Mets = team 121)
 └── schedules/
-    └── daily.ts           # 10:00 AM ET → Slack + optional SMS
+    └── daily.ts           # 9:00 AM ET → Slack + optional SMS
 ```
 
 The morning cron hands work to **Slack** and/or **Twilio** (`receive(…)`). The agent calls `get_mets_game`, writes a short reply, and the channel delivers it automatically.
@@ -197,9 +197,9 @@ Or push to a Git-connected Vercel project.
 
 ### Step 3 — Confirm cron
 
-In Vercel **Settings → Cron Jobs**, confirm a job exists for `0 14 * * *` (daily at 14:00 UTC = 10:00 AM EDT).
+In Vercel **Settings → Cron Jobs**, confirm a job exists for `0 13 * * *` (daily at 13:00 UTC = 9:00 AM EDT).
 
-In November when the US falls back to EST, change `agent/schedules/daily.ts` to `0 15 * * *` and redeploy.
+In November when the US falls back to EST, change `agent/schedules/daily.ts` to `0 14 * * *` and redeploy.
 
 ### Step 4 — Production smoke test
 
@@ -223,12 +223,12 @@ https://<your-app>/eve/v1/twilio/messages
 
 ### Step 6 — Watch the first cron
 
-After 10am ET, check **Observability → Cron Jobs** and **Logs** in Vercel. Confirm the run started a session and your phone received the text.
+After 9am ET, check **Observability → Cron Jobs** and **Logs** in Vercel. Confirm the run started a session and your phone received the text.
 
 ## Things worth knowing
 
-- **Daylight saving.** Cron is UTC. `0 14 * * *` is 10am EDT (summer). In November, switch to `0 15 * * *` for 10am EST.
-- **No skip risk.** The recap runs at 10am the next morning, so last night's game is always Final.
+- **Daylight saving.** Cron is UTC. `0 13 * * *` is 9am EDT (summer). In November, switch to `0 14 * * *` for 9am EST.
+- **No skip risk.** The recap runs at 9am the next morning, so last night's game is always Final.
 - **Twilio compliance.** You are responsible for SMS consent/opt-out rules for outbound texts to your own number this is usually fine; see Eve's Twilio channel docs for production use with other recipients.
 - **Beta.** Eve is in public preview — expect framework changes.
 
