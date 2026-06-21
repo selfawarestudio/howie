@@ -1,6 +1,6 @@
 # Howie — a Mets game-day agent
 
-A tiny [Eve](https://www.npmjs.com/package/eve) agent that recaps last night and previews tonight every morning at 9am ET — via **Slack** and/or **SMS**. Silent when there's nothing to say.
+A tiny [Eve](https://www.npmjs.com/package/eve) agent that recaps last night and previews tonight every morning at 9am ET in **Slack**. Silent when there's nothing to say.
 
 ## Architecture
 
@@ -10,22 +10,20 @@ agent/
 ├── agent.ts               # model config (Vercel AI Gateway)
 ├── channels/
 │   ├── eve.ts             # HTTP channel for dev QA (curl / TUI)
-│   ├── slack.ts           # Slack channel (Vercel Connect)
-│   └── twilio.ts          # SMS delivery via Twilio channel
+│   └── slack.ts           # Slack channel (Vercel Connect)
 ├── tools/
 │   └── get_mets_game.ts   # free MLB Stats API (Mets = team 121)
 └── schedules/
-    └── daily.ts           # 9:00 AM ET → Slack + optional SMS
+    └── daily.ts           # 9:00 AM ET → Slack
 ```
 
-The morning cron hands work to **Slack** and/or **Twilio** (`receive(…)`). The agent calls `get_mets_game`, writes a short reply, and the channel delivers it automatically.
+The morning cron hands work to **Slack** (`receive(…)`). The agent calls `get_mets_game`, writes a short reply, and the channel posts it automatically.
 
 ## Prerequisites
 
 - Node 24.x
 - A Vercel account (deployment, AI Gateway OIDC, Slack Connect)
 - **Slack:** Self Aware Studio workspace + a channel for Howie
-- **SMS (optional):** Twilio account + A2P 10DLC campaign approval
 
 ## Setup
 
@@ -35,7 +33,7 @@ The morning cron hands work to **Slack** and/or **Twilio** (`receive(…)`). The
 npm install
 ```
 
-### 2. Slack (works today — no carrier registration)
+### 2. Slack
 
 Howie uses [Vercel Connect](https://vercel.com/docs/connect) for Slack credentials (no manual bot token in env).
 
@@ -70,28 +68,7 @@ SLACK_CHANNEL_ID=C0123456789       # your #howie channel
 
 **Manual use:** `@Howie what's the Mets game tonight?` in the channel works too.
 
-### 3. Twilio (optional — after A2P campaign verifies)
-
-1. Sign up at [twilio.com](https://www.twilio.com) and buy a phone number.
-2. Copy Account SID and Auth Token from the console.
-3. Copy `.env.example` to `.env` and fill in:
-
-```
-TWILIO_ACCOUNT_SID=AC...
-TWILIO_AUTH_TOKEN=...
-TWILIO_FROM=+1XXXXXXXXXX     # your Twilio number (E.164)
-TWILIO_TO=+1XXXXXXXXXX       # your cell (E.164)
-```
-
-4. **Optional — inbound SMS:** In the Twilio console, set your number's **Messaging webhook** to:
-
-```
-https://<your-vercel-app>/eve/v1/twilio/messages
-```
-
-   Method: `POST`. Only `TWILIO_TO` can reach the agent (`allowFrom`).
-
-### 4. Model credential (local dev)
+### 3. Model credential (local dev)
 
 The default model is `openai/gpt-5.4-mini` via the Vercel AI Gateway.
 
@@ -116,7 +93,7 @@ npm run build
 
 `eve build` should succeed and list `daily` under schedules.
 
-### Step 2 — Smoke-test the MLB tool (no SMS)
+### Step 2 — Smoke-test the MLB tool
 
 Start the dev server:
 
@@ -124,12 +101,12 @@ Start the dev server:
 npm run dev
 ```
 
-In another terminal, trigger a session on the Eve HTTP channel (no Twilio needed yet):
+In another terminal, trigger a session on the Eve HTTP channel:
 
 ```bash
 curl -X POST http://127.0.0.1:3000/eve/v1/session \
   -H 'content-type: application/json' \
-  -d '{"message":"Call get_mets_game for 2025-09-15 and summarize in one line. Do not mention SMS."}'
+  -d '{"message":"Call get_mets_game for 2025-09-15 and summarize in one line."}'
 ```
 
 Copy the `sessionId` from the JSON response, then watch the stream:
@@ -142,7 +119,7 @@ Confirm the agent calls `get_mets_game` and returns a sensible recap.
 
 ### Step 3 — Fire the daily schedule (dev dispatch route)
 
-This runs the same path production cron uses, but delivers via Twilio:
+This runs the same path production cron uses and posts to Slack:
 
 ```bash
 curl -X POST http://127.0.0.1:3000/eve/v1/dev/schedules/daily
@@ -154,13 +131,13 @@ Response example:
 { "scheduleId": "daily", "sessionIds": ["..."] }
 ```
 
-Watch the stream for that session id. You should see tool calls to `get_mets_game`, then a short assistant message. **Check your phone** — the Twilio channel sends the final reply as SMS.
+Watch the stream for that session id. You should see tool calls to `get_mets_game`, then a short assistant message. **Check `#howie`** — the Slack channel should get the post.
 
 To test a specific date pair without waiting for real calendar days, temporarily edit the prompt in `agent/schedules/daily.ts` with known game dates (e.g. a 2025 postseason date), re-run Step 3, then revert.
 
 ### Step 4 — Verify silence on off days
 
-Trigger the schedule on a date when the Mets have no game yesterday or today (or edit the prompt to use two off-season dates). The agent should end without an assistant message — **no SMS should arrive**.
+Trigger the schedule on a date when the Mets have no game yesterday or today (or edit the prompt to use two off-season dates). The agent should end without an assistant message — **nothing should post to Slack**.
 
 ### Step 5 — Health check
 
@@ -180,10 +157,8 @@ In the Vercel project **Settings → Environment Variables**, add for Production
 
 | Variable | Value |
 |----------|-------|
-| `TWILIO_ACCOUNT_SID` | `AC...` |
-| `TWILIO_AUTH_TOKEN` | your token |
-| `TWILIO_FROM` | `+1...` Twilio number |
-| `TWILIO_TO` | `+1...` your cell |
+| `SLACK_CONNECT_UID` | `slack/howie` (from Connect) |
+| `SLACK_CHANNEL_ID` | `C…` your channel id |
 
 Do **not** commit `.env`. AI Gateway auth on Vercel is via OIDC after link — no gateway key required in prod.
 
@@ -213,25 +188,17 @@ Optionally drive the live deployment with the Eve TUI:
 npx eve dev https://<your-app>
 ```
 
-### Step 5 — Twilio webhook (optional)
+### Step 5 — Watch the first cron
 
-If you want to text Howie back, set the Twilio number's Messaging webhook to:
-
-```
-https://<your-app>/eve/v1/twilio/messages
-```
-
-### Step 6 — Watch the first cron
-
-After 9am ET, check **Observability → Cron Jobs** and **Logs** in Vercel. Confirm the run started a session and your phone received the text.
+After 9am ET, check **Observability → Cron Jobs** and **Logs** in Vercel. Confirm the run started a session and `#howie` got the morning post.
 
 ## Things worth knowing
 
 - **Daylight saving.** Cron is UTC. `0 13 * * *` is 9am EDT (summer). In November, switch to `0 14 * * *` for 9am EST.
 - **No skip risk.** The recap runs at 9am the next morning, so last night's game is always Final.
-- **Twilio compliance.** You are responsible for SMS consent/opt-out rules for outbound texts to your own number this is usually fine; see Eve's Twilio channel docs for production use with other recipients.
+- **Scope.** Howie only covers Mets baseball — off-topic Slack messages get a short refusal before the model runs.
 - **Beta.** Eve is in public preview — expect framework changes.
 
 ## Easy next step
 
-A live-game schedule that texts only on a lead change or a Lindor/Soto homer — `get_mets_game` already returns inning + score, so it's mostly one more schedule file.
+A live-game schedule that posts only on a lead change or a Lindor/Soto homer — `get_mets_game` already returns inning + score, so it's mostly one more schedule file.
