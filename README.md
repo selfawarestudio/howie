@@ -1,6 +1,6 @@
 # Howie — a Mets game-day agent
 
-A tiny [Eve](https://www.npmjs.com/package/eve) agent that recaps last night and previews tonight every morning at 9am ET in **Slack**. Silent when there's nothing to say.
+A tiny [Eve](https://www.npmjs.com/package/eve) agent that recaps last night and previews tonight every morning at 9am ET via **iMessage** (Photon Spectrum) and/or **Slack**. Silent when there's nothing to say.
 
 ## Architecture
 
@@ -10,6 +10,7 @@ agent/
 ├── agent.ts               # model config (Vercel AI Gateway)
 ├── channels/
 │   ├── eve.ts             # HTTP channel for dev QA (curl / TUI)
+│   ├── imessage.ts        # iMessage via Photon Spectrum
 │   └── slack.ts           # Slack channel (Vercel Connect)
 ├── tools/
 │   └── get_mets_game.ts   # free MLB Stats API (Mets = team 121)
@@ -17,13 +18,14 @@ agent/
     └── daily.ts           # 9:00 AM ET → Slack
 ```
 
-The morning cron hands work to **Slack** (`receive(…)`). The agent calls `get_mets_game`, writes a short reply, and the channel posts it automatically.
+The morning cron hands work to **iMessage** and/or **Slack** (`receive(…)`). The agent calls `get_mets_game`, writes a short reply, and the channel posts it automatically.
 
 ## Prerequisites
 
 - Node 24.x
-- A Vercel account (deployment, AI Gateway OIDC, Slack Connect)
-- **Slack:** Self Aware Studio workspace + a channel for Howie
+- A Vercel account (deployment, AI Gateway OIDC)
+- **iMessage (recommended):** free [Photon](https://photon.codes) account
+- **Slack (optional):** Self Aware Studio workspace + a channel for Howie
 
 ## Setup
 
@@ -33,7 +35,37 @@ The morning cron hands work to **Slack** (`receive(…)`). The agent calls `get_
 npm install
 ```
 
-### 2. Slack
+### 2. iMessage (Photon Spectrum, free tier)
+
+Howie uses [Photon Spectrum](https://photon.codes/docs/spectrum-ts/getting-started) for iMessage. No Mac relay — cloud webhooks work on Vercel.
+
+**a. Create a Photon project**
+
+1. Sign up at [app.photon.codes](https://app.photon.codes)
+2. Create a project and copy **Project ID** and **Project Secret**
+
+**b. Deploy once** (webhook URL must be public — see Deployment below), then register the webhook in the Photon dashboard:
+
+```
+https://<your-app>/eve/v1/imessage/webhook
+```
+
+Copy the **webhook signing secret** (shown once).
+
+**c. Env vars:**
+
+```
+PHOTON_PROJECT_ID=...
+PHOTON_PROJECT_SECRET=...
+SPECTRUM_WEBHOOK_SECRET=whsec_...
+IMESSAGE_RECIPIENT=+1XXXXXXXXXX    # who gets the 9am digest (E.164)
+```
+
+Only numbers in `IMESSAGE_ALLOW_FROM` (defaults to `IMESSAGE_RECIPIENT`) can text Howie back.
+
+**Manual use:** text the Howie contact whatever number Photon assigns you on the free tier — e.g. "what's the Mets game tonight?"
+
+### 3. Slack (optional)
 
 Howie uses [Vercel Connect](https://vercel.com/docs/connect) for Slack credentials (no manual bot token in env).
 
@@ -68,7 +100,7 @@ SLACK_CHANNEL_ID=C0123456789       # your #howie channel
 
 **Manual use:** `@Howie what's the Mets game tonight?` in the channel works too.
 
-### 3. Model credential (local dev)
+### 4. Model credential (local dev)
 
 The default model is `openai/gpt-5.4-mini` via the Vercel AI Gateway.
 
@@ -157,8 +189,12 @@ In the Vercel project **Settings → Environment Variables**, add for Production
 
 | Variable | Value |
 |----------|-------|
-| `SLACK_CONNECT_UID` | `slack/howie` (from Connect) |
-| `SLACK_CHANNEL_ID` | `C…` your channel id |
+| `PHOTON_PROJECT_ID` | from Photon dashboard |
+| `PHOTON_PROJECT_SECRET` | from Photon dashboard |
+| `SPECTRUM_WEBHOOK_SECRET` | from webhook registration |
+| `IMESSAGE_RECIPIENT` | `+1…` digest recipient |
+| `SLACK_CONNECT_UID` | `slack/howie` (optional) |
+| `SLACK_CHANNEL_ID` | `C…` your channel id (optional) |
 
 Do **not** commit `.env`. AI Gateway auth on Vercel is via OIDC after link — no gateway key required in prod.
 
@@ -190,13 +226,14 @@ npx eve dev https://<your-app>
 
 ### Step 5 — Watch the first cron
 
-After 9am ET, check **Observability → Cron Jobs** and **Logs** in Vercel. Confirm the run started a session and `#howie` got the morning post.
+After 9am ET, check **Observability → Cron Jobs** and **Logs** in Vercel. Confirm the run started a session and the digest arrived (iMessage and/or `#howie`).
 
 ## Things worth knowing
 
 - **Daylight saving.** Cron is UTC. `0 13 * * *` is 9am EDT (summer). In November, switch to `0 14 * * *` for 9am EST.
 - **No skip risk.** The recap runs at 9am the next morning, so last night's game is always Final.
-- **Scope.** Howie only covers Mets baseball — off-topic Slack messages get a short refusal before the model runs.
+- **Scope.** Howie only covers Mets baseball — off-topic messages get a short refusal before the model runs.
+- **Free-tier iMessage.** Photon assigns numbers from a shared pool on the free plan — the sender may vary, but delivery works fine for personal use.
 - **Beta.** Eve is in public preview — expect framework changes.
 
 ## Easy next step

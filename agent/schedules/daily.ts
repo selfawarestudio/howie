@@ -1,5 +1,6 @@
 import { defineSchedule } from 'eve/schedules';
 
+import imessage from '../channels/imessage.js';
 import slack from '../channels/slack.js';
 
 function easternDate(offsetDays = 0): string {
@@ -24,21 +25,34 @@ const dailyPrompt = (yesterday: string, today: string) =>
 export default defineSchedule({
   cron: '0 13 * * *',
   async run({ receive, waitUntil, appAuth }) {
+    const imessageRecipient = process.env.IMESSAGE_RECIPIENT;
     const slackChannelId = process.env.SLACK_CHANNEL_ID;
-    if (!slackChannelId) {
-      throw new Error('Configure SLACK_CHANNEL_ID');
+    if (!imessageRecipient && !slackChannelId) {
+      throw new Error('Configure IMESSAGE_RECIPIENT and/or SLACK_CHANNEL_ID');
     }
 
     const today = easternDate(0);
     const yesterday = easternDate(-1);
     const message = dailyPrompt(yesterday, today);
 
-    waitUntil(
-      receive(slack, {
-        message,
-        target: { channelId: slackChannelId },
-        auth: appAuth,
-      }),
-    );
+    if (imessageRecipient) {
+      waitUntil(
+        receive(imessage, {
+          message,
+          target: { phoneNumber: imessageRecipient },
+          auth: appAuth,
+        }),
+      );
+    }
+
+    if (slackChannelId) {
+      waitUntil(
+        receive(slack, {
+          message,
+          target: { channelId: slackChannelId },
+          auth: appAuth,
+        }),
+      );
+    }
   },
 });
