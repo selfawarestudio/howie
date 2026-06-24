@@ -36,4 +36,16 @@ export default slackChannel({
   credentials: connectSlackCredentials(connectUid),
   onAppMention: dispatchMetsOnly,
   onDirectMessage: dispatchMetsOnly,
+  events: {
+    async 'message.completed'(eventData, channel) {
+      if (eventData.finishReason === 'tool-calls') return;
+      if (!eventData.message) return;
+      try {
+        await channel.thread.post(eventData.message);
+      } catch (error) {
+        console.error('[howie/slack] failed to post reply:', error);
+        throw error;
+      }
+    },
+  },
 });

@@ -16,14 +16,20 @@ import {
 //   PHOTON_PROJECT_ID
 //   PHOTON_PROJECT_SECRET
 //   SPECTRUM_WEBHOOK_SECRET
-//   IMESSAGE_RECIPIENT          phone for the daily digest (+1…)
-//   IMESSAGE_ALLOW_FROM         optional comma-separated allow list; defaults to IMESSAGE_RECIPIENT
+//   IMESSAGE_RECIPIENTS         comma-separated phones for the daily digest (+1…)
+//   IMESSAGE_RECIPIENT          legacy single-recipient fallback
+//   IMESSAGE_ALLOW_FROM         optional comma-separated allow list; defaults to recipients
 
 export interface ImessageReceiveTarget {
   phoneNumber: string;
 }
 
 type ImessageState = ImessageDeliveryState & { senderAddress: string | null };
+
+function parsePhoneList(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return [...new Set(raw.split(',').map((entry) => entry.trim()).filter(Boolean))];
+}
 
 function continuationToken(state: Pick<ImessageDeliveryState, 'spaceId' | 'recipientPhone'>) {
   return state.spaceId ?? state.recipientPhone ?? 'unknown';
@@ -36,10 +42,24 @@ function extractText(message: Message): string | null {
   return null;
 }
 
+function replyText(message: unknown): string | null {
+  if (typeof message === 'string') {
+    const trimmed = message.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (message && typeof message === 'object' && 'content' in message) {
+    return extractText(message as Message);
+  }
+  return null;
+}
+
 function parseAllowFrom(): string[] | '*' {
-  const raw = process.env.IMESSAGE_ALLOW_FROM ?? process.env.IMESSAGE_RECIPIENT;
-  if (!raw || raw === '*') return '*';
-  return raw.split(',').map((entry) => entry.trim()).filter(Boolean);
+  const raw = process.env.IMESSAGE_ALLOW_FROM;
+  if (raw?.trim() === '*') return '*';
+  const allowList = parsePhoneList(
+    raw ?? process.env.IMESSAGE_RECIPIENTS ?? process.env.IMESSAGE_RECIPIENT,
+  );
+  return allowList.length > 0 ? allowList : '*';
 }
 
 async function isAllowed(senderAddress: string | undefined): Promise<boolean> {
@@ -138,12 +158,23 @@ export default defineChannel<
   events: {
     async 'message.completed'(eventData, channel) {
       if (eventData.finishReason === 'tool-calls') return;
-      if (!eventData.message) return;
-      await channel.sendReply(eventData.message);
+      const text = replyText(eventData.message);
+      if (!text) return;
+      try {
+        await sendToSpace(channel.state, text);
+      } catch (error) {
+        console.error('[howie/imessage] failed to send reply:', error);
+        throw error;
+      }
     },
 
     async 'turn.failed'(_eventData, channel) {
-      await channel.sendReply('Hit a snag pulling that up — try again in a minute.');
+      try {
+        await channel.sendReply('Hit a snag pulling that up — try again in a minute.');
+      } catch (error) {
+        console.error('[howie/imessage] failed to send error reply:', error);
+        throw error;
+      }
     },
   },
 });

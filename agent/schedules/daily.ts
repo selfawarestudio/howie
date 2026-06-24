@@ -1,7 +1,26 @@
 import { defineSchedule } from 'eve/schedules';
+import type { Session } from 'eve/channels';
 
 import imessage from '../channels/imessage.js';
 import slack from '../channels/slack.js';
+
+function parsePhoneList(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return [...new Set(raw.split(',').map((entry) => entry.trim()).filter(Boolean))];
+}
+
+async function waitForSession(session: Session) {
+  const stream = await session.getEventStream();
+  for await (const event of stream) {
+    if (
+      event.type === 'session.waiting' ||
+      event.type === 'session.completed' ||
+      event.type === 'session.failed'
+    ) {
+      return;
+    }
+  }
+}
 
 function easternDate(offsetDays = 0): string {
   const d = new Date(Date.now() + offsetDays * 86_400_000);
@@ -25,23 +44,25 @@ const dailyPrompt = (yesterday: string, today: string) =>
 export default defineSchedule({
   cron: '0 13 * * *',
   async run({ receive, waitUntil, appAuth }) {
-    const imessageRecipient = process.env.IMESSAGE_RECIPIENT;
+    const imessageRecipients = parsePhoneList(
+      process.env.IMESSAGE_RECIPIENTS ?? process.env.IMESSAGE_RECIPIENT,
+    );
     const slackChannelId = process.env.SLACK_CHANNEL_ID;
-    if (!imessageRecipient && !slackChannelId) {
-      throw new Error('Configure IMESSAGE_RECIPIENT and/or SLACK_CHANNEL_ID');
+    if (imessageRecipients.length === 0 && !slackChannelId) {
+      throw new Error('Configure IMESSAGE_RECIPIENTS/IMESSAGE_RECIPIENT and/or SLACK_CHANNEL_ID');
     }
 
     const today = easternDate(0);
     const yesterday = easternDate(-1);
     const message = dailyPrompt(yesterday, today);
 
-    if (imessageRecipient) {
+    for (const phoneNumber of imessageRecipients) {
       waitUntil(
         receive(imessage, {
           message,
-          target: { phoneNumber: imessageRecipient },
+          target: { phoneNumber },
           auth: appAuth,
-        }),
+        }).then(waitForSession),
       );
     }
 
@@ -51,7 +72,7 @@ export default defineSchedule({
           message,
           target: { channelId: slackChannelId },
           auth: appAuth,
-        }),
+        }).then(waitForSession),
       );
     }
   },

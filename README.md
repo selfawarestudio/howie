@@ -58,10 +58,10 @@ Copy the **webhook signing secret** (shown once).
 PHOTON_PROJECT_ID=...
 PHOTON_PROJECT_SECRET=...
 SPECTRUM_WEBHOOK_SECRET=whsec_...
-IMESSAGE_RECIPIENT=+1XXXXXXXXXX    # who gets the 9am digest (E.164)
+IMESSAGE_RECIPIENTS=+1XXXXXXXXXX,+1YYYYYYYYYY    # who gets the 9am digest (E.164)
 ```
 
-Only numbers in `IMESSAGE_ALLOW_FROM` (defaults to `IMESSAGE_RECIPIENT`) can text Howie back.
+Only numbers in `IMESSAGE_ALLOW_FROM` (defaults to `IMESSAGE_RECIPIENTS`, then legacy `IMESSAGE_RECIPIENT`) can text Howie back.
 
 **Manual use:** text the Howie contact whatever number Photon assigns you on the free tier — e.g. "what's the Mets game tonight?"
 
@@ -192,7 +192,7 @@ In the Vercel project **Settings → Environment Variables**, add for Production
 | `PHOTON_PROJECT_ID` | from Photon dashboard |
 | `PHOTON_PROJECT_SECRET` | from Photon dashboard |
 | `SPECTRUM_WEBHOOK_SECRET` | from webhook registration |
-| `IMESSAGE_RECIPIENT` | `+1…` digest recipient |
+| `IMESSAGE_RECIPIENTS` | comma-separated `+1…` digest recipients |
 | `SLACK_CONNECT_UID` | `slack/howie` (optional) |
 | `SLACK_CHANNEL_ID` | `C…` your channel id (optional) |
 

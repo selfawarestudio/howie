@@ -27,6 +27,20 @@ export function getSpectrum() {
   return spectrumPromise;
 }
 
+function isRetryablePhotonError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return (
+    message.includes('connection dropped') ||
+    message.includes('unavailable') ||
+    message.includes('timeout')
+  );
+}
+
+async function sleep(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function sendToSpace(state: ImessageDeliveryState, text: string) {
   const spectrum = await getSpectrum();
   const im = imessage(spectrum);
@@ -35,5 +49,21 @@ export async function sendToSpace(state: ImessageDeliveryState, text: string) {
     ? await im.space.get(state.spaceId)
     : await im.space.create(await im.user(state.recipientPhone!));
 
-  await space.send(text);
+  if (!state.spaceId) {
+    state.spaceId = space.id;
+  }
+
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await space.send(text);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt === 3 || !isRetryablePhotonError(error)) throw error;
+      await sleep(attempt * 1_000);
+    }
+  }
+
+  throw lastError;
 }
