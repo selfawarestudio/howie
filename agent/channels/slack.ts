@@ -1,4 +1,3 @@
-import { connectSlackCredentials } from '@vercel/connect/eve';
 import {
   defaultSlackAuth,
   slackChannel,
@@ -8,6 +7,7 @@ import {
 } from 'eve/channels/slack';
 
 import { isInMetsScope, OUT_OF_SCOPE_REPLY } from '../lib/mets-scope.js';
+import { slackCredentials } from '../lib/slack.js';
 
 // Vercel Connect handles the bot token and webhook verification.
 // Set up via: vercel connect create slack --triggers
@@ -15,8 +15,6 @@ import { isInMetsScope, OUT_OF_SCOPE_REPLY } from '../lib/mets-scope.js';
 //
 // Env:
 //   SLACK_CONNECT_UID   Connect client UID, e.g. slack/howie
-
-const connectUid = process.env.SLACK_CONNECT_UID ?? 'slack/howie';
 
 async function dispatchMetsOnly(
   ctx: SlackContext,
@@ -33,7 +31,7 @@ async function dispatchMetsOnly(
 }
 
 export default slackChannel({
-  credentials: connectSlackCredentials(connectUid),
+  credentials: slackCredentials,
   onAppMention: dispatchMetsOnly,
   onDirectMessage: dispatchMetsOnly,
   events: {
