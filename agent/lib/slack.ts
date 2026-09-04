@@ -1,19 +1,11 @@
 import { connectSlackCredentials } from '@vercel/connect/eve';
-import type { SlackBotToken } from 'eve/channels/slack';
+import { resolveSlackBotToken } from 'eve/channels/slack';
 
 export const slackConnectUid = process.env.SLACK_CONNECT_UID ?? 'slack/howie';
 export const slackCredentials = connectSlackCredentials(slackConnectUid);
 
-async function resolveBotToken(token: SlackBotToken | undefined): Promise<string> {
-  const value = token ?? process.env.SLACK_BOT_TOKEN;
-  if (!value) {
-    throw new Error('Configure SLACK_CONNECT_UID or SLACK_BOT_TOKEN');
-  }
-  return typeof value === 'function' ? value() : value;
-}
-
 export async function sendToSlackChannel(channelId: string, text: string) {
-  const botToken = await resolveBotToken(slackCredentials.botToken);
+  const botToken = await resolveSlackBotToken(slackCredentials.botToken);
   const res = await fetch('https://slack.com/api/chat.postMessage', {
     method: 'POST',
     headers: {

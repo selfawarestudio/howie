@@ -10,24 +10,19 @@
     "build": "eve build",
     "dev": "eve dev",
     "start": "eve start",
-    "typecheck": "tsgo"
+    "typecheck": "tsgo",
+    "eval": "eve eval"
   },
   "dependencies": {
-    "@vercel/connect": "0.2.2",
-    "ai": "7.0.0-beta.178",
-    "eve": "^0.11.2",
-    "spectrum-ts": "^5.2.0",
+    "@vercel/connect": "^2.0.1",
+    "ai": "^7.0.92",
+    "eve": "^0.51.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/node": "24.x",
-    "@typescript/native-preview": "7.0.0-dev.20260523.1"
-  },
-  "overrides": {
-    "ai": "7.0.0-beta.178"
-  },
-  "resolutions": {
-    "ai": "7.0.0-beta.178"
+    "@typescript/native-preview": "7.0.0-dev.20260523.1",
+    "vercel": "^59.11.2"
   },
   "engines": {
     "node": "24.x"

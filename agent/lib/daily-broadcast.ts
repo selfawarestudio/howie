@@ -1,10 +1,8 @@
-import { sendToSlackChannel } from './slack.js';
-import { sendToSpace } from './spectrum.js';
+import { createHash } from 'node:crypto';
 
-function parsePhoneList(raw: string | undefined): string[] {
-  if (!raw) return [];
-  return [...new Set(raw.split(',').map((entry) => entry.trim()).filter(Boolean))];
-}
+import { sendLinqText } from './linq.js';
+import { digestRecipients } from './phones.js';
+import { sendToSlackChannel } from './slack.js';
 
 type DeliveryFailure = {
   destination: 'imessage' | 'slack';
@@ -18,9 +16,7 @@ export async function broadcastDailyDigest(text: string) {
     return { ok: true as const, delivered: 0, skipped: true as const };
   }
 
-  const imessageRecipients = parsePhoneList(
-    process.env.IMESSAGE_RECIPIENTS ?? process.env.IMESSAGE_RECIPIENT,
-  );
+  const imessageRecipients = digestRecipients();
   const slackChannelId = process.env.SLACK_CHANNEL_ID;
   if (imessageRecipients.length === 0 && !slackChannelId) {
     throw new Error('Configure IMESSAGE_RECIPIENTS/IMESSAGE_RECIPIENT and/or SLACK_CHANNEL_ID');
@@ -28,7 +24,7 @@ export async function broadcastDailyDigest(text: string) {
 
   const failures: DeliveryFailure[] = [];
   const deliveries: Promise<void>[] = imessageRecipients.map((phoneNumber, index) =>
-    sendToSpace({ spaceId: null, recipientPhone: phoneNumber }, digest).catch((error: unknown) => {
+    sendLinqText(phoneNumber, digest, digestIdempotencyKey(phoneNumber, digest)).catch((error: unknown) => {
       failures.push({ destination: 'imessage', index, error });
     }),
   );
@@ -64,4 +60,9 @@ export async function broadcastDailyDigest(text: string) {
   );
 
   return { ok: true as const, delivered, skipped: false as const };
+}
+
+function digestIdempotencyKey(phoneNumber: string, digest: string) {
+  const digestHash = createHash('sha256').update(digest).digest('hex');
+  return `howie-digest:${phoneNumber}:${digestHash}`;
 }

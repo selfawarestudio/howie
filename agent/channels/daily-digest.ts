@@ -33,10 +33,9 @@ export default defineChannel<
     POST('/trigger', async () => new Response(null, { status: 204 })),
   ],
 
-  async receive(input, { send }) {
-    return send(input.message, {
+  async receive(input, { from }) {
+    return from(input.target.token).send(input.message, {
       auth: input.auth,
-      continuationToken: input.target.token,
       state: { token: input.target.token },
       mode: 'task',
     });

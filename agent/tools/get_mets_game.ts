@@ -1,33 +1,48 @@
 import { defineTool } from 'eve/tools';
 import { z } from 'zod';
 
-// New York Mets team id in the MLB Stats API.
-const METS_ID = 121;
+import {
+  METS_ID,
+  asNumber,
+  asRecord,
+  asString,
+  easternTime,
+  resolveGameDate,
+} from '../lib/mlb.js';
+
 const API = 'https://statsapi.mlb.com/api/v1/schedule';
 
-// Today's date in America/New_York as YYYY-MM-DD, so "today's game" means the
-// fan's today, not UTC's.
-function easternDate(): string {
-  // en-CA gives YYYY-MM-DD formatting.
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/New_York',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date());
-}
+export type ScoringPlay = {
+  inning: number | null;
+  half: 'top' | 'bottom' | null;
+  event: string | null;
+  description: string;
+  batter: string | null;
+};
 
-function easternTime(iso: string): string {
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(new Date(iso));
+function parseScoringPlay(value: unknown): ScoringPlay | null {
+  const play = asRecord(value);
+  if (!play) return null;
+  const result = asRecord(play.result);
+  const about = asRecord(play.about);
+  const matchup = asRecord(play.matchup);
+  const batter = asRecord(matchup?.batter);
+  const description = asString(result?.description);
+  if (!description) return null;
+  const halfRaw = asString(about?.halfInning);
+  const half = halfRaw === 'top' || halfRaw === 'bottom' ? halfRaw : null;
+  return {
+    inning: asNumber(about?.inning),
+    half,
+    event: asString(result?.event),
+    description,
+    batter: asString(batter?.fullName),
+  };
 }
 
 export default defineTool({
   description:
-    "Get the New York Mets game for a date (defaults to today, Eastern time). Returns matchup, first pitch, status, probable pitchers, and — if the game is final or in progress — the score and result from the Mets' point of view.",
+    "Get the New York Mets game for a date (defaults to today, Eastern time). Returns matchup, first pitch, status, probable pitchers, scoring plays, and — if the game is final or in progress — the score and result from the Mets' point of view.",
   inputSchema: z.object({
     date: z
       .string()
@@ -35,64 +50,84 @@ export default defineTool({
       .describe('YYYY-MM-DD. Omit for today (America/New_York).'),
   }),
   async execute({ date }) {
-    const day = date ?? easternDate();
+    const day = resolveGameDate(date);
     const url =
       `${API}?sportId=1&teamId=${METS_ID}&date=${day}` +
-      `&hydrate=probablePitcher,linescore,team`;
+      `&hydrate=probablePitcher,linescore,team,scoringplays,decisions`;
 
     const res = await fetch(url, {
       headers: { 'User-Agent': 'mets-game-day-agent' },
     });
     if (!res.ok) {
-      return { ok: false, error: `MLB API ${res.status}`, date: day };
+      return { ok: false as const, error: `MLB API ${res.status}`, date: day };
     }
 
-    const data = (await res.json()) as any;
-    const games: any[] = data?.dates?.[0]?.games ?? [];
+    const data: unknown = await res.json();
+    const root = asRecord(data);
+    const dates = Array.isArray(root?.dates) ? root.dates : [];
+    const firstDate = asRecord(dates[0]);
+    const games = Array.isArray(firstDate?.games) ? firstDate.games : [];
     if (games.length === 0) {
-      return { ok: true, hasGame: false, date: day };
+      return { ok: true as const, hasGame: false as const, date: day };
     }
 
-    // Doubleheaders are rare; take the first unfinished game, else the last one.
+    const parsedGames = games.map((game) => asRecord(game)).filter((game) => game !== null);
     const game =
-      games.find((g) => g?.status?.abstractGameState !== 'Final') ??
-      games[games.length - 1];
+      parsedGames.find((entry) => {
+        const status = asRecord(entry.status);
+        return asString(status?.abstractGameState) !== 'Final';
+      }) ?? parsedGames[parsedGames.length - 1];
 
-    const home = game.teams.home;
-    const away = game.teams.away;
-    const metsAreHome = home.team.id === METS_ID;
+    if (!game) {
+      return { ok: true as const, hasGame: false as const, date: day };
+    }
+
+    const teams = asRecord(game.teams);
+    const home = asRecord(teams?.home);
+    const away = asRecord(teams?.away);
+    const homeTeam = asRecord(home?.team);
+    const metsAreHome = asNumber(homeTeam?.id) === METS_ID;
     const mets = metsAreHome ? home : away;
     const opp = metsAreHome ? away : home;
-
-    const status: string = game.status?.detailedState ?? 'Unknown';
-    const isFinal = game.status?.abstractGameState === 'Final';
-    const isLive = game.status?.abstractGameState === 'Live';
+    const oppTeam = asRecord(opp?.team);
+    const metsPitcher = asRecord(mets?.probablePitcher);
+    const oppPitcher = asRecord(opp?.probablePitcher);
+    const status = asRecord(game.status);
+    const linescore = asRecord(game.linescore);
+    const abstractState = asString(status?.abstractGameState);
+    const isFinal = abstractState === 'Final';
+    const isLive = abstractState === 'Live';
+    const metsScore = asNumber(mets?.score);
+    const oppScore = asNumber(opp?.score);
 
     let result: 'win' | 'loss' | 'tie' | null = null;
-    if (isFinal && typeof mets.score === 'number' && typeof opp.score === 'number') {
-      result = mets.score > opp.score ? 'win' : mets.score < opp.score ? 'loss' : 'tie';
+    if (isFinal && metsScore !== null && oppScore !== null) {
+      result = metsScore > oppScore ? 'win' : metsScore < oppScore ? 'loss' : 'tie';
     }
 
+    const scoringPlays = Array.isArray(game.scoringPlays)
+      ? game.scoringPlays.map(parseScoringPlay).filter((play) => play !== null)
+      : [];
+
     return {
-      ok: true,
-      hasGame: true,
+      ok: true as const,
+      hasGame: true as const,
       date: day,
-      status, // e.g. "Scheduled", "Pre-Game", "In Progress", "Final", "Postponed"
+      gamePk: asNumber(game.gamePk),
+      status: asString(status?.detailedState) ?? 'Unknown',
       isFinal,
       isLive,
-      metsHomeOrAway: metsAreHome ? 'home' : 'away',
-      opponent: opp.team.name,
-      firstPitchET: game.gameDate ? easternTime(game.gameDate) : null,
+      metsHomeOrAway: metsAreHome ? ('home' as const) : ('away' as const),
+      opponent: asString(oppTeam?.name),
+      firstPitchET: asString(game.gameDate) ? easternTime(String(game.gameDate)) : null,
       probablePitchers: {
-        mets: mets.probablePitcher?.fullName ?? null,
-        opponent: opp.probablePitcher?.fullName ?? null,
+        mets: asString(metsPitcher?.fullName),
+        opponent: asString(oppPitcher?.fullName),
       },
-      score:
-        typeof mets.score === 'number'
-          ? { mets: mets.score, opponent: opp.score }
-          : null,
-      result, // null until the game is final
-      inning: game.linescore?.currentInningOrdinal ?? null, // e.g. "7th" while live
+      score: metsScore !== null ? { mets: metsScore, opponent: oppScore } : null,
+      result,
+      inning: asString(linescore?.currentInningOrdinal),
+      scoringPlays,
     };
   },
 });

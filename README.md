@@ -1,6 +1,6 @@
 # Howie — a Mets game-day agent
 
-A tiny [Eve](https://www.npmjs.com/package/eve) agent that recaps last night and previews tonight every morning at 9am ET via **iMessage** (Photon Spectrum) and/or **Slack**. Silent when there's nothing to say.
+A tiny [Eve](https://www.npmjs.com/package/eve) agent that recaps last night and previews tonight every morning at 9am ET via **iMessage** (Linq) and/or **Slack**. Silent when there's nothing to say.
 
 ## Architecture
 
@@ -10,21 +10,24 @@ agent/
 ├── agent.ts               # model config (Vercel AI Gateway)
 ├── channels/
 │   ├── eve.ts             # HTTP channel for dev QA (curl / TUI)
-│   ├── imessage.ts        # iMessage via Photon Spectrum
-│   └── slack.ts           # Slack channel (Vercel Connect)
+│   ├── linq.ts            # iMessage via Linq (Vercel Connect)
+│   ├── slack.ts           # Slack channel (Vercel Connect)
+│   └── daily-digest.ts    # internal channel the 9am cron talks to
 ├── tools/
-│   └── get_mets_game.ts   # free MLB Stats API (Mets = team 121)
+│   ├── get_mets_game.ts   # MLB Stats API (Mets = team 121)
+│   ├── get_mets_club.ts   # standings, last-ten, streak, transactions
+│   └── broadcast_daily_digest.ts
 └── schedules/
-    └── daily.ts           # 9:00 AM ET → Slack
+    └── daily.ts           # 9:00 AM ET
 ```
 
-The morning cron hands work to **iMessage** and/or **Slack** (`receive(…)`). The agent calls `get_mets_game`, writes a short reply, and the channel posts it automatically.
+The morning cron starts a turn on `daily-digest`. Howie calls `get_mets_game` and `get_mets_club`, then `broadcast_daily_digest` posts the same text to Linq and Slack.
 
 ## Prerequisites
 
 - Node 24.x
 - A Vercel account (deployment, AI Gateway OIDC)
-- **iMessage (recommended):** free [Photon](https://photon.codes) account
+- **iMessage (recommended):** a Linq line via `eve add channel/linq`
 - **Slack (optional):** Self Aware Studio workspace + a channel for Howie
 
 ## Setup
@@ -35,35 +38,29 @@ The morning cron hands work to **iMessage** and/or **Slack** (`receive(…)`). T
 npm install
 ```
 
-### 2. iMessage (Photon Spectrum, free tier)
+### 2. iMessage (Linq)
 
-Howie uses [Photon Spectrum](https://photon.codes/docs/spectrum-ts/getting-started) for iMessage. No Mac relay — cloud webhooks work on Vercel.
+Howie uses Eve's first-class [Linq](https://linqapp.com) channel. Vercel Connect holds the API key. The webhook is `/eve/v1/linq`.
 
-**a. Create a Photon project**
+This project already has connector `linq/howie` on the dedicated line **+1 (205) 396-6998**. To recreate that on a new project:
 
-1. Sign up at [app.photon.codes](https://app.photon.codes)
-2. Create a project and copy **Project ID** and **Project Secret**
-
-**b. Deploy once** (webhook URL must be public — see Deployment below), then register the webhook in the Photon dashboard:
-
-```
-https://<your-app>/eve/v1/imessage/webhook
+```bash
+npx eve add channel/linq --yes
 ```
 
-Copy the **webhook signing secret** (shown once).
+Complete the browser Connect flow so Eve can create or link a Linq account and number.
 
-**c. Env vars:**
+**Env vars:**
 
 ```
-PHOTON_PROJECT_ID=...
-PHOTON_PROJECT_SECRET=...
-SPECTRUM_WEBHOOK_SECRET=whsec_...
 IMESSAGE_RECIPIENTS=+1XXXXXXXXXX,+1YYYYYYYYYY    # who gets the 9am digest (E.164)
+IMESSAGE_ALLOW_FROM=+1XXXXXXXXXX                 # optional inbound allow list
+LINQ_CONNECT_UID=linq/howie                      # optional; this is the default
 ```
 
-Only numbers in `IMESSAGE_ALLOW_FROM` (defaults to `IMESSAGE_RECIPIENTS`, then legacy `IMESSAGE_RECIPIENT`) can text Howie back.
+Only numbers in `IMESSAGE_ALLOW_FROM` can text Howie back. If you omit it, Howie uses `IMESSAGE_RECIPIENTS` (then legacy `IMESSAGE_RECIPIENT`). There is no open-to-the-world default.
 
-**Manual use:** text the Howie contact whatever number Photon assigns you on the free tier — e.g. "what's the Mets game tonight?"
+**Manual use:** text Howie at +12053966998. Example: "what's the Mets game tonight?"
 
 ### 3. Slack (optional)
 
@@ -189,10 +186,9 @@ In the Vercel project **Settings → Environment Variables**, add for Production
 
 | Variable | Value |
 |----------|-------|
-| `PHOTON_PROJECT_ID` | from Photon dashboard |
-| `PHOTON_PROJECT_SECRET` | from Photon dashboard |
-| `SPECTRUM_WEBHOOK_SECRET` | from webhook registration |
 | `IMESSAGE_RECIPIENTS` | comma-separated `+1…` digest recipients |
+| `IMESSAGE_ALLOW_FROM` | optional inbound allow list; defaults to recipients |
+| `LINQ_CONNECT_UID` | `linq/howie` (optional) |
 | `SLACK_CONNECT_UID` | `slack/howie` (optional) |
 | `SLACK_CHANNEL_ID` | `C…` your channel id (optional) |
 
@@ -233,7 +229,7 @@ After 9am ET, check **Observability → Cron Jobs** and **Logs** in Vercel. Conf
 - **Daylight saving.** Cron is UTC. `0 13 * * *` is 9am EDT (summer). In November, switch to `0 14 * * *` for 9am EST.
 - **No skip risk.** The recap runs at 9am the next morning, so last night's game is always Final.
 - **Scope.** Howie only covers Mets baseball — off-topic messages get a short refusal before the model runs.
-- **Free-tier iMessage.** Photon assigns numbers from a shared pool on the free plan — the sender may vary, but delivery works fine for personal use.
+- **Dedicated iMessage line.** Howie texts from `+12053966998` through Linq. Replies from unknown numbers are dropped.
 - **Beta.** Eve is in public preview — expect framework changes.
 
 ## Easy next step
