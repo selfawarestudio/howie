@@ -23,5 +23,31 @@ export default defineEval({
         'no canned loss recap example',
       ),
     );
+    t.check(
+      instructions,
+      satisfies(
+        (text: string) => !/ya gotta believe/i.test(text),
+        'no ya gotta believe mantra',
+      ),
+    );
+    t.check(
+      instructions,
+      satisfies((text: string) => !text.includes('Carson Benge'), 'no Carson Benge name-drop'),
+    );
+    t.check(
+      instructions,
+      satisfies((text: string) => !text.includes('Nolan McLean'), 'no Nolan McLean name-drop'),
+    );
+    t.check(
+      instructions,
+      satisfies((text: string) => !text.includes('AJ Ewing'), 'no AJ Ewing name-drop'),
+    );
+    t.check(
+      instructions,
+      satisfies(
+        (text: string) => !text.toLowerCase().includes('the future is bright'),
+        'no the future is bright line',
+      ),
+    );
   },
 });
