@@ -1,17 +1,8 @@
 import { defineSchedule } from 'eve/schedules';
 
 import dailyDigest from '../channels/daily-digest.js';
+import { easternDate } from '../lib/mlb.js';
 import { digestRecipients } from '../lib/phones.js';
-
-function easternDate(offsetDays = 0): string {
-  const d = new Date(Date.now() + offsetDays * 86_400_000);
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/New_York',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(d);
-}
 
 export const dailyPrompt = (yesterday: string, today: string) =>
   `Daily Mets check.\n` +

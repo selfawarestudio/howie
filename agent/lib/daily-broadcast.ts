@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
 
+import { fetchMetsGame } from './mlb-game.js';
+import { easternDate } from './mlb.js';
+import { LIVE_OPT_IN_CTA } from './live-update-messages.js';
 import { sendLinqText } from './linq.js';
 import { digestRecipients } from './phones.js';
 
@@ -9,8 +12,17 @@ type DeliveryFailure = {
   error: unknown;
 };
 
-export async function broadcastDailyDigest(text: string) {
+async function digestWithLiveCta(text: string): Promise<string> {
   const digest = text.trim();
+  const game = await fetchMetsGame(easternDate(0));
+  if (!game.ok || !game.hasGame || game.isFinal) {
+    return digest;
+  }
+  return `${digest}\n\n${LIVE_OPT_IN_CTA}`;
+}
+
+export async function broadcastDailyDigest(text: string) {
+  const digest = (await digestWithLiveCta(text)).trim();
   if (!digest) {
     return { ok: true as const, delivered: 0, skipped: true as const };
   }

@@ -12,15 +12,19 @@ agent/
 │   ├── eve.ts             # HTTP channel for dev QA (curl / TUI)
 │   ├── linq.ts            # iMessage via Linq (Vercel Connect)
 │   └── daily-digest.ts    # internal channel the 9am cron talks to
+├── lib/
+│   ├── live-monitor.ts    # poll MLB + push scoring/final updates
+│   └── live-subscriptions.ts
 ├── tools/
 │   ├── get_mets_game.ts   # MLB Stats API (Mets = team 121)
 │   ├── get_mets_club.ts   # standings, last-ten, streak, transactions
 │   └── broadcast_daily_digest.ts
 └── schedules/
-    └── daily.ts           # 9:00 AM ET
+    ├── daily.ts           # 9:00 AM ET
+    └── live-monitor.ts    # every minute while subs are active
 ```
 
-The morning cron starts a turn on `daily-digest`. Howie calls `get_mets_game` and `get_mets_club`, then `broadcast_daily_digest` texts the digest to configured iMessage recipients.
+The morning cron starts a turn on `daily-digest`. Howie calls `get_mets_game` and `get_mets_club`, then `broadcast_daily_digest` texts the digest to configured iMessage recipients. When there's a game today, the digest ends with a LIVE opt-in line. Users who reply `LIVE` get a reminder 10 min before first pitch, scoring plays, and the final. Reply `STOP` to cancel.
 
 ## Prerequisites
 
@@ -60,7 +64,18 @@ Only numbers in `IMESSAGE_ALLOW_FROM` can text Howie back. If you omit it, Howie
 
 **Manual use:** text Howie at +12053966998. Example: "what's the Mets game tonight?"
 
-### 3. Model credential (local dev)
+### 3. Live updates storage (production)
+
+Live opt-ins are stored in **Vercel KV** (or Upstash Redis via the Vercel Marketplace). In local dev without KV env vars, subscriptions persist to `.eve/live-subscriptions.json`.
+
+Add a Redis/KV integration to your Vercel project, then set:
+
+```
+KV_REST_API_URL=...
+KV_REST_API_TOKEN=...
+```
+
+### 4. Model credential (local dev)
 
 The default model is `openai/gpt-5.4-mini` via the Vercel AI Gateway.
 
@@ -152,6 +167,8 @@ In the Vercel project **Settings → Environment Variables**, add for Production
 | `IMESSAGE_RECIPIENTS` | comma-separated `+1…` digest recipients |
 | `IMESSAGE_ALLOW_FROM` | optional inbound allow list; defaults to recipients |
 | `LINQ_CONNECT_UID` | `linq/howie` (optional) |
+| `KV_REST_API_URL` | from Vercel KV / Upstash integration |
+| `KV_REST_API_TOKEN` | from Vercel KV / Upstash integration |
 
 Do **not** commit `.env`. AI Gateway auth on Vercel is via OIDC after link — no gateway key required in prod.
 
@@ -165,7 +182,10 @@ Or push to a Git-connected Vercel project.
 
 ### Step 3 — Confirm cron
 
-In Vercel **Settings → Cron Jobs**, confirm a job exists for `0 13 * * *` (daily at 13:00 UTC = 9:00 AM EDT).
+In Vercel **Settings → Cron Jobs**, confirm jobs exist for:
+
+- `0 13 * * *` — daily digest (9:00 AM EDT)
+- `* * * * *` — live monitor (polls MLB when users are subscribed)
 
 In November when the US falls back to EST, change `agent/schedules/daily.ts` to `0 14 * * *` and redeploy.
 
@@ -191,8 +211,5 @@ After 9am ET, check **Observability → Cron Jobs** and **Logs** in Vercel. Conf
 - **No skip risk.** The recap runs at 9am the next morning, so last night's game is always Final.
 - **Scope.** Howie only covers Mets baseball — off-topic messages get a short refusal before the model runs.
 - **Dedicated iMessage line.** Howie texts from `+12053966998` through Linq. Replies from unknown numbers are dropped.
+- **Live updates.** Reply `LIVE` after the morning digest (or anytime on game day). Reply `STOP` to cancel. The monitor cron runs every minute but exits immediately when nobody is subscribed.
 - **Beta.** Eve is in public preview — expect framework changes.
-
-## Easy next step
-
-A live-game schedule that posts only on a lead change or a Lindor/Soto homer — `get_mets_game` already returns inning + score, so it's mostly one more schedule file.
