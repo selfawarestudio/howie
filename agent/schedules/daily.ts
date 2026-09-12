@@ -20,7 +20,7 @@ export const dailyPrompt = (yesterday: string, today: string) =>
   `2) Preview today: call get_mets_game with date ${today}. ` +
   `If there's a game, add the matchup and first pitch.\n` +
   `3) Call get_mets_club. Use last-ten, streak, standings, a recent transaction, or a young player's actual game only if it changes the story.\n` +
-  `Combine into ONE short message.\n` +
+  `Combine into ONE short message. When both recap and preview are present, recap first, blank line, preview.\n` +
   `When you have the final digest, call broadcast_daily_digest with that exact text.\n` +
   `If neither day has a game, do not call broadcast_daily_digest and reply with nothing.`;
 
