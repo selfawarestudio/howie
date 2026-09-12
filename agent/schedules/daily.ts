@@ -28,9 +28,8 @@ export default defineSchedule({
   cron: '0 13 * * *',
   async run({ to, waitUntil, appAuth }) {
     const imessageRecipients = digestRecipients();
-    const slackChannelId = process.env.SLACK_CHANNEL_ID;
-    if (imessageRecipients.length === 0 && !slackChannelId) {
-      throw new Error('Configure IMESSAGE_RECIPIENTS/IMESSAGE_RECIPIENT and/or SLACK_CHANNEL_ID');
+    if (imessageRecipients.length === 0) {
+      throw new Error('Configure IMESSAGE_RECIPIENTS or IMESSAGE_RECIPIENT');
     }
 
     const today = easternDate(0);

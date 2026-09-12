@@ -1,6 +1,6 @@
 # Howie — a Mets game-day agent
 
-A tiny [Eve](https://www.npmjs.com/package/eve) agent that recaps last night and previews tonight every morning at 9am ET via **iMessage** (Linq) and/or **Slack**. Silent when there's nothing to say.
+A tiny [Eve](https://www.npmjs.com/package/eve) agent that recaps last night and previews tonight every morning at 9am ET via **iMessage** (Linq). Silent when there's nothing to say.
 
 ## Architecture
 
@@ -11,7 +11,6 @@ agent/
 ├── channels/
 │   ├── eve.ts             # HTTP channel for dev QA (curl / TUI)
 │   ├── linq.ts            # iMessage via Linq (Vercel Connect)
-│   ├── slack.ts           # Slack channel (Vercel Connect)
 │   └── daily-digest.ts    # internal channel the 9am cron talks to
 ├── tools/
 │   ├── get_mets_game.ts   # MLB Stats API (Mets = team 121)
@@ -21,14 +20,13 @@ agent/
     └── daily.ts           # 9:00 AM ET
 ```
 
-The morning cron starts a turn on `daily-digest`. Howie calls `get_mets_game` and `get_mets_club`, then `broadcast_daily_digest` posts the same text to Linq and Slack.
+The morning cron starts a turn on `daily-digest`. Howie calls `get_mets_game` and `get_mets_club`, then `broadcast_daily_digest` texts the digest to configured iMessage recipients.
 
 ## Prerequisites
 
 - Node 24.x
 - A Vercel account (deployment, AI Gateway OIDC)
-- **iMessage (recommended):** a Linq line via `eve add channel/linq`
-- **Slack (optional):** Self Aware Studio workspace + a channel for Howie
+- A Linq line via `eve add channel/linq`
 
 ## Setup
 
@@ -62,42 +60,7 @@ Only numbers in `IMESSAGE_ALLOW_FROM` can text Howie back. If you omit it, Howie
 
 **Manual use:** text Howie at +12053966998. Example: "what's the Mets game tonight?"
 
-### 3. Slack (optional)
-
-Howie uses [Vercel Connect](https://vercel.com/docs/connect) for Slack credentials (no manual bot token in env).
-
-**a. Create a Slack channel** in your workspace (e.g. `#howie`) and invite your wife. Copy the channel ID (`C…` — right-click channel → View channel details, or from the URL).
-
-**b. Create and attach a Connect client:**
-
-```bash
-npm i -g vercel@latest
-export FF_CONNECT_ENABLED=1
-
-vercel connect create slack --triggers
-# Note the UID printed, e.g. slack/howie
-
-vercel connect detach <uid> --yes
-vercel connect attach <uid> --triggers \
-  --trigger-path /eve/v1/slack --yes
-```
-
-Follow the prompts to install the Slack app to **Self Aware Studio** workspace. Grant scopes for posting and reading mentions/DMs.
-
-**c. Env vars:**
-
-```
-SLACK_CONNECT_UID=slack/howie      # UID from connect create
-SLACK_CHANNEL_ID=C0123456789       # your #howie channel
-```
-
-**d. Invite the bot** to the channel: `/invite @Howie` (or whatever the app is named).
-
-**e. Deploy** (Connect triggers need a live URL — see Deployment below).
-
-**Manual use:** `@Howie what's the Mets game tonight?` in the channel works too.
-
-### 4. Model credential (local dev)
+### 3. Model credential (local dev)
 
 The default model is `openai/gpt-5.4-mini` via the Vercel AI Gateway.
 
@@ -148,7 +111,7 @@ Confirm the agent calls `get_mets_game` and returns a sensible recap.
 
 ### Step 3 — Fire the daily schedule (dev dispatch route)
 
-This runs the same path production cron uses and posts to Slack:
+This runs the same path production cron uses and texts the digest:
 
 ```bash
 curl -X POST http://127.0.0.1:3000/eve/v1/dev/schedules/daily
@@ -160,13 +123,13 @@ Response example:
 { "scheduleId": "daily", "sessionIds": ["..."] }
 ```
 
-Watch the stream for that session id. You should see tool calls to `get_mets_game`, then a short assistant message. **Check `#howie`** — the Slack channel should get the post.
+Watch the stream for that session id. You should see tool calls to `get_mets_game`, then a short assistant message. Check your configured iMessage recipients for the digest.
 
 To test a specific date pair without waiting for real calendar days, temporarily edit the prompt in `agent/schedules/daily.ts` with known game dates (e.g. a 2025 postseason date), re-run Step 3, then revert.
 
 ### Step 4 — Verify silence on off days
 
-Trigger the schedule on a date when the Mets have no game yesterday or today (or edit the prompt to use two off-season dates). The agent should end without an assistant message — **nothing should post to Slack**.
+Trigger the schedule on a date when the Mets have no game yesterday or today (or edit the prompt to use two off-season dates). The agent should end without an assistant message — **nothing should be sent**.
 
 ### Step 5 — Health check
 
@@ -189,8 +152,6 @@ In the Vercel project **Settings → Environment Variables**, add for Production
 | `IMESSAGE_RECIPIENTS` | comma-separated `+1…` digest recipients |
 | `IMESSAGE_ALLOW_FROM` | optional inbound allow list; defaults to recipients |
 | `LINQ_CONNECT_UID` | `linq/howie` (optional) |
-| `SLACK_CONNECT_UID` | `slack/howie` (optional) |
-| `SLACK_CHANNEL_ID` | `C…` your channel id (optional) |
 
 Do **not** commit `.env`. AI Gateway auth on Vercel is via OIDC after link — no gateway key required in prod.
 
@@ -222,7 +183,7 @@ npx eve dev https://<your-app>
 
 ### Step 5 — Watch the first cron
 
-After 9am ET, check **Observability → Cron Jobs** and **Logs** in Vercel. Confirm the run started a session and the digest arrived (iMessage and/or `#howie`).
+After 9am ET, check **Observability → Cron Jobs** and **Logs** in Vercel. Confirm the run started a session and the digest arrived on iMessage.
 
 ## Things worth knowing
 

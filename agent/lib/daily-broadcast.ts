@@ -2,11 +2,10 @@ import { createHash } from 'node:crypto';
 
 import { sendLinqText } from './linq.js';
 import { digestRecipients } from './phones.js';
-import { sendToSlackChannel } from './slack.js';
 
 type DeliveryFailure = {
-  destination: 'imessage' | 'slack';
-  index?: number;
+  destination: 'imessage';
+  index: number;
   error: unknown;
 };
 
@@ -17,9 +16,8 @@ export async function broadcastDailyDigest(text: string) {
   }
 
   const imessageRecipients = digestRecipients();
-  const slackChannelId = process.env.SLACK_CHANNEL_ID;
-  if (imessageRecipients.length === 0 && !slackChannelId) {
-    throw new Error('Configure IMESSAGE_RECIPIENTS/IMESSAGE_RECIPIENT and/or SLACK_CHANNEL_ID');
+  if (imessageRecipients.length === 0) {
+    throw new Error('Configure IMESSAGE_RECIPIENTS or IMESSAGE_RECIPIENT');
   }
 
   const failures: DeliveryFailure[] = [];
@@ -29,23 +27,14 @@ export async function broadcastDailyDigest(text: string) {
     }),
   );
 
-  if (slackChannelId) {
-    deliveries.push(
-      sendToSlackChannel(slackChannelId, digest).catch((error: unknown) => {
-        failures.push({ destination: 'slack', error });
-      }),
-    );
-  }
-
   await Promise.all(deliveries);
 
   if (failures.length > 0) {
     for (const failure of failures) {
-      const label =
-        failure.destination === 'imessage'
-          ? `iMessage recipient index ${failure.index}`
-          : 'Slack channel';
-      console.error(`[howie/daily] delivery failed for ${label}:`, failure.error);
+      console.error(
+        `[howie/daily] delivery failed for iMessage recipient index ${failure.index}:`,
+        failure.error,
+      );
     }
     throw new AggregateError(
       failures.map((failure) => failure.error),
@@ -53,13 +42,9 @@ export async function broadcastDailyDigest(text: string) {
     );
   }
 
-  const delivered = imessageRecipients.length + (slackChannelId ? 1 : 0);
-  console.log(
-    `[howie/daily] broadcast delivered to ${imessageRecipients.length} iMessage recipient(s)` +
-      (slackChannelId ? ' and Slack' : ''),
-  );
+  console.log(`[howie/daily] broadcast delivered to ${imessageRecipients.length} iMessage recipient(s)`);
 
-  return { ok: true as const, delivered, skipped: false as const };
+  return { ok: true as const, delivered: imessageRecipients.length, skipped: false as const };
 }
 
 function digestIdempotencyKey(phoneNumber: string, digest: string) {
