@@ -12,3 +12,6 @@ dist
 .DS_Store
 *.tsbuildinfo
 .env*
+.agents/
+skills-lock.json
+.audit/
