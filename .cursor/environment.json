@@ -1,0 +1,12 @@
+{
+  "name": "Howie (Mets game-day agent)",
+  "install": "bash .cursor/install.sh",
+  "start": "bash .cursor/start.sh",
+  "terminals": [
+    {
+      "name": "eve-dev",
+      "command": "bash .cursor/dev.sh"
+    }
+  ],
+  "ports": [3000]
+}
