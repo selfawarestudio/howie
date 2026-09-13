@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { easternDate } from './mlb.js';
 import { normalizeHandle } from './phones.js';
+import { getRedis, hasRedisEnv } from './redis.js';
 
 export interface LiveSubscription {
   phone: string;
@@ -16,22 +17,16 @@ export interface LiveSubscription {
   createdAt: string;
 }
 
-const KV_KEY = 'howie:live-subscriptions';
+const REDIS_KEY = 'howie:live-subscriptions';
 const DEV_STORE_PATH = path.join(process.cwd(), '.eve', 'live-subscriptions.json');
 
-function hasKvEnv(): boolean {
-  return Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
-}
-
-async function kvGetAll(): Promise<LiveSubscription[]> {
-  const { kv } = await import('@vercel/kv');
-  const stored = await kv.get<LiveSubscription[]>(KV_KEY);
+async function redisGetAll(): Promise<LiveSubscription[]> {
+  const stored = await getRedis().get<LiveSubscription[]>(REDIS_KEY);
   return Array.isArray(stored) ? stored : [];
 }
 
-async function kvSetAll(subs: LiveSubscription[]): Promise<void> {
-  const { kv } = await import('@vercel/kv');
-  await kv.set(KV_KEY, subs);
+async function redisSetAll(subs: LiveSubscription[]): Promise<void> {
+  await getRedis().set(REDIS_KEY, subs);
 }
 
 async function fileGetAll(): Promise<LiveSubscription[]> {
@@ -50,13 +45,13 @@ async function fileSetAll(subs: LiveSubscription[]): Promise<void> {
 }
 
 async function readAll(): Promise<LiveSubscription[]> {
-  if (hasKvEnv()) return kvGetAll();
+  if (hasRedisEnv()) return redisGetAll();
   return fileGetAll();
 }
 
 async function writeAll(subs: LiveSubscription[]): Promise<void> {
-  if (hasKvEnv()) {
-    await kvSetAll(subs);
+  if (hasRedisEnv()) {
+    await redisSetAll(subs);
     return;
   }
   await fileSetAll(subs);

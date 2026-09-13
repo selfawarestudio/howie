@@ -64,15 +64,22 @@ Only numbers in `IMESSAGE_ALLOW_FROM` can text Howie back. If you omit it, Howie
 
 **Manual use:** text Howie at +12053966998. Example: "what's the Mets game tonight?"
 
-### 3. Live updates storage (production)
+### 3. Upstash Redis (live updates)
 
-Live opt-ins are stored in **Vercel KV** (or Upstash Redis via the Vercel Marketplace). In local dev without KV env vars, subscriptions persist to `.eve/live-subscriptions.json`.
+Live opt-ins are stored in **Upstash Redis** (via the Vercel Marketplace). In local dev without Redis env vars, subscriptions fall back to `.eve/live-subscriptions.json`.
 
-Add a Redis/KV integration to your Vercel project, then set:
+One-time setup from the project root (requires `vercel login` and `vercel link` first):
 
+```bash
+npm run setup:redis
 ```
-KV_REST_API_URL=...
-KV_REST_API_TOKEN=...
+
+That runs `vercel integration add upstash/upstash-kv`, provisions a Redis database, wires it to this project, and pulls env vars into `.env.local`. The integration sets `KV_REST_API_URL` and `KV_REST_API_TOKEN` (the SDK also accepts `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`).
+
+To refresh env vars later:
+
+```bash
+npm run env:pull
 ```
 
 ### 4. Model credential (local dev)
@@ -167,8 +174,8 @@ In the Vercel project **Settings → Environment Variables**, add for Production
 | `IMESSAGE_RECIPIENTS` | comma-separated `+1…` digest recipients |
 | `IMESSAGE_ALLOW_FROM` | optional inbound allow list; defaults to recipients |
 | `LINQ_CONNECT_UID` | `linq/howie` (optional) |
-| `KV_REST_API_URL` | from Vercel KV / Upstash integration |
-| `KV_REST_API_TOKEN` | from Vercel KV / Upstash integration |
+| `KV_REST_API_URL` | auto-set by `npm run setup:redis` |
+| `KV_REST_API_TOKEN` | auto-set by `npm run setup:redis` |
 
 Do **not** commit `.env`. AI Gateway auth on Vercel is via OIDC after link — no gateway key required in prod.
 

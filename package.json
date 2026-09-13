@@ -11,11 +11,13 @@
     "dev": "eve dev",
     "start": "eve start",
     "typecheck": "tsgo",
-    "eval": "eve eval"
+    "eval": "eve eval",
+    "setup:redis": "vercel integration add upstash/upstash-kv -m primaryRegion=iad1",
+    "env:pull": "vercel env pull .env.local"
   },
   "dependencies": {
+    "@upstash/redis": "^1.38.4",
     "@vercel/connect": "^2.0.1",
-    "@vercel/kv": "^1.0.1",
     "ai": "^7.0.92",
     "eve": "^0.51.0",
     "zod": "4.4.3"
